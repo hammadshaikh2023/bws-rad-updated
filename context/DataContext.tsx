@@ -1,4 +1,5 @@
 
+
 import React, { createContext, useState, useContext, ReactNode, useEffect } from 'react';
 import { Product, SalesOrder, PurchaseOrder, OrderItem, User, Currency, GatePass, HistoryEntry, PackingSlip, ShippingLabel, Reminder, Supplier, RawMaterial, SalesTicket, PurchaseTicket } from '../types';
 import { mockProducts, mockSalesOrders, mockPurchaseOrders, mockUsers, mockSuppliers, mockRawMaterials, mockSalesTickets, mockPurchaseTickets } from '../data/mockData';
@@ -42,7 +43,11 @@ interface DataContextType {
     updateProductStatus: (productIds: string[], status: Product['status']) => void;
     addSalesOrder: (order: Omit<SalesOrder, 'id' | 'total' | 'status' | 'history'>, userName: string) => void;
     addSalesTicket: (ticket: SalesTicket) => void;
+    updateSalesTicket: (ticket: SalesTicket) => void;
+    deleteSalesTicket: (ticketId: string) => void;
     addPurchaseTicket: (ticket: PurchaseTicket) => void;
+    updatePurchaseTicket: (ticket: PurchaseTicket) => void;
+    deletePurchaseTicket: (ticketId: string) => void;
     addPurchaseOrder: (order: Omit<PurchaseOrder, 'id' | 'total' | 'status' | 'history'>, userName: string) => void;
     addUser: (user: Omit<User, 'id'>) => void;
     updateUser: (user: User) => void;
@@ -340,8 +345,32 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         idb.saveData(SALES_TICKETS_STORE_NAME, updatedTickets);
     };
 
+    const updateSalesTicket = (ticket: SalesTicket) => {
+        const updatedTickets = salesTickets.map(t => (t.id === ticket.id ? ticket : t));
+        setSalesTickets(updatedTickets);
+        idb.saveData(SALES_TICKETS_STORE_NAME, updatedTickets);
+    };
+
+    const deleteSalesTicket = (ticketId: string) => {
+        const updatedTickets = salesTickets.filter(t => t.id !== ticketId);
+        setSalesTickets(updatedTickets);
+        idb.saveData(SALES_TICKETS_STORE_NAME, updatedTickets);
+    };
+
     const addPurchaseTicket = (ticket: PurchaseTicket) => {
         const updatedTickets = [ticket, ...purchaseTickets];
+        setPurchaseTickets(updatedTickets);
+        idb.saveData(PURCHASE_TICKETS_STORE_NAME, updatedTickets);
+    };
+
+    const updatePurchaseTicket = (ticket: PurchaseTicket) => {
+        const updatedTickets = purchaseTickets.map(t => (t.id === ticket.id ? ticket : t));
+        setPurchaseTickets(updatedTickets);
+        idb.saveData(PURCHASE_TICKETS_STORE_NAME, updatedTickets);
+    };
+
+    const deletePurchaseTicket = (ticketId: string) => {
+        const updatedTickets = purchaseTickets.filter(t => t.id !== ticketId);
         setPurchaseTickets(updatedTickets);
         idb.saveData(PURCHASE_TICKETS_STORE_NAME, updatedTickets);
     };
@@ -632,7 +661,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     };
 
     return (
-        <DataContext.Provider value={{ products, rawMaterials, salesOrders, salesTickets, purchaseTickets, purchaseOrders, users, suppliers, gatePasses, packingSlips, shippingLabels, reminders, categories, addProduct, addRawMaterial, updateRawMaterial, updateProduct, deleteProducts, deleteRawMaterials, updateProductStatus, addSalesOrder, addSalesTicket, addPurchaseTicket, addPurchaseOrder, addUser, updateUser, addSupplier, updateSupplier, deleteSuppliers, addGatePass, addPackingSlip, addShippingLabel, addReminder, updateReminderStatus, updateSalesOrderStatus, updatePurchaseOrderStatus, updatePurchaseOrderTrackingNumber, updateProductStock, updateGatePassStatus, addCategory, renameCategory, deleteCategory }}>
+        <DataContext.Provider value={{ products, rawMaterials, salesOrders, salesTickets, purchaseTickets, purchaseOrders, users, suppliers, gatePasses, packingSlips, shippingLabels, reminders, categories, addProduct, addRawMaterial, updateRawMaterial, updateProduct, deleteProducts, deleteRawMaterials, updateProductStatus, addSalesOrder, addSalesTicket, updateSalesTicket, deleteSalesTicket, addPurchaseTicket, updatePurchaseTicket, deletePurchaseTicket, addPurchaseOrder, addUser, updateUser, addSupplier, updateSupplier, deleteSuppliers, addGatePass, addPackingSlip, addShippingLabel, addReminder, updateReminderStatus, updateSalesOrderStatus, updatePurchaseOrderStatus, updatePurchaseOrderTrackingNumber, updateProductStock, updateGatePassStatus, addCategory, renameCategory, deleteCategory }}>
             {children}
         </DataContext.Provider>
     );
