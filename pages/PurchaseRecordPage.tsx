@@ -26,12 +26,14 @@ function useDebounce<T>(value: T, delay: number): T {
     return debouncedValue;
 }
 
-const CreatePurchaseTicketModal: React.FC<{
+const AddEditPurchaseTicketModal: React.FC<{
     isOpen: boolean;
     onClose: () => void;
-}> = ({ isOpen, onClose }) => {
-    const { addPurchaseTicket, purchaseTickets } = useData();
+    ticket: PurchaseTicket | null;
+}> = ({ isOpen, onClose, ticket }) => {
+    const { addPurchaseTicket, updatePurchaseTicket, purchaseTickets } = useData();
     const { currentUser } = useAuth();
+    const isEditMode = !!ticket;
     
     const initialFormState: Partial<PurchaseTicket> = {
         id: '',
@@ -67,11 +69,18 @@ const CreatePurchaseTicketModal: React.FC<{
 
     useEffect(() => {
         if (isOpen) {
-            setFormData({ ...initialFormState, operatorName: currentUser?.name || 'N/A' });
-            setNetWeight('N/A');
+            if (isEditMode) {
+                setFormData(ticket);
+                const gross = Number(ticket.grossWeight) || 0;
+                const tare = Number(ticket.tareWeight) || 0;
+                setNetWeight(gross > tare ? gross - tare : 0);
+            } else {
+                setFormData({ ...initialFormState, operatorName: currentUser?.name || 'N/A' });
+                setNetWeight('N/A');
+            }
             setTicketNoError(null);
         }
-    }, [isOpen, currentUser]);
+    }, [isOpen, ticket, isEditMode, currentUser]);
 
     useEffect(() => {
         const gross = formData.grossWeight;
@@ -89,7 +98,7 @@ const CreatePurchaseTicketModal: React.FC<{
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
         
-        if (name === 'id') {
+        if (name === 'id' && !isEditMode) {
             if (purchaseTickets.some(ticket => ticket.id === value)) {
                 setTicketNoError('This Ticket No already exists.');
             } else {
@@ -103,7 +112,7 @@ const CreatePurchaseTicketModal: React.FC<{
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         
-        if (!formData.id) {
+        if (!isEditMode && !formData.id) {
             setTicketNoError('Ticket No is required.');
             return;
         }
@@ -114,7 +123,7 @@ const CreatePurchaseTicketModal: React.FC<{
         }
         
         const ticketData: PurchaseTicket = {
-            id: formData.id,
+            id: formData.id!,
             serialNo: formData.serialNo!,
             date: formData.date!,
             customerName: formData.customerName!,
@@ -135,18 +144,22 @@ const CreatePurchaseTicketModal: React.FC<{
             notes: formData.notes,
         };
 
-        addPurchaseTicket(ticketData);
+        if (isEditMode) {
+            updatePurchaseTicket(ticketData);
+        } else {
+            addPurchaseTicket(ticketData);
+        }
         onClose();
     };
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title="Create New Purchase Record">
+        <Modal isOpen={isOpen} onClose={onClose} title={isEditMode ? "Edit Purchase Record" : "Create New Purchase Record"}>
             <form onSubmit={handleSubmit} className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
                     {/* Ticket Number & Serial No */}
                     <div>
                         <label className="block text-sm font-medium">Ticket Number</label>
-                        <input type="text" name="id" value={formData.id || ''} onChange={handleChange} required />
+                        <input type="text" name="id" value={formData.id || ''} onChange={handleChange} required readOnly={isEditMode} className={isEditMode ? "bg-gray-100 dark:bg-gray-700 cursor-not-allowed" : ""} />
                         {ticketNoError && <p className="text-red-500 text-xs mt-1">{ticketNoError}</p>}
                     </div>
                     <div>
@@ -241,7 +254,7 @@ const CreatePurchaseTicketModal: React.FC<{
                 </div>
                 <div className="flex justify-end pt-4 space-x-2 border-t dark:border-gray-700 mt-4">
                     <button type="button" onClick={onClose} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500">Cancel</button>
-                    <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">Save Record</button>
+                    <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">{isEditMode ? 'Save Changes' : 'Save Record'}</button>
                 </div>
             </form>
         </Modal>
@@ -283,6 +296,7 @@ const ViewPurchaseTicketModal: React.FC<{
             ['Truck Number', ticket.truckNo],
             ['Tare Weight (kg)', formatWeight(ticket.tareWeight)],
             ['Truck Driver', ticket.driverName],
+            // FIX: Use 'as const' to ensure TypeScript infers the literal type 'bold' for fontStyle, which matches the expected 'FontStyle' type.
             [{ content: 'Net Weight (kg)', styles: { fontStyle: 'bold' as const } }, { content: formatWeight(ticket.netWeight), styles: { fontStyle: 'bold' as const } }],
             ['Source', ticket.origin],
             ['Operator', ticket.operatorName],
@@ -371,10 +385,11 @@ const ViewPurchaseTicketModal: React.FC<{
 };
 
 const PurchaseRecordPage: React.FC = () => {
-    const { purchaseTickets } = useData();
-    const [isCreateModalOpen, setCreateModalOpen] = useState(false);
+    const { purchaseTickets, deletePurchaseTicket } = useData();
+    const [isAddEditModalOpen, setAddEditModalOpen] = useState(false);
     const [isViewModalOpen, setViewModalOpen] = useState(false);
     const [selectedTicket, setSelectedTicket] = useState<PurchaseTicket | null>(null);
+    const [isDeleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
@@ -384,14 +399,46 @@ const PurchaseRecordPage: React.FC = () => {
         return purchaseTickets.filter(ticket => 
             ticket.id.toLowerCase().includes(term) ||
             ticket.customerName.toLowerCase().includes(term) ||
-            ticket.materialCode.toLowerCase().includes(term)
+            ticket.materialCode.toLowerCase().includes(term) ||
+            ticket.truckNo.toLowerCase().includes(term) ||
+            ticket.poNo.toLowerCase().includes(term)
         );
     }, [purchaseTickets, debouncedSearchTerm]);
+
+    const handleAddNew = () => {
+        setSelectedTicket(null);
+        setAddEditModalOpen(true);
+    };
 
     const handleViewTicket = (ticket: PurchaseTicket) => {
         setSelectedTicket(ticket);
         setViewModalOpen(true);
     };
+    
+    const handleEditTicket = (ticket: PurchaseTicket) => {
+        setSelectedTicket(ticket);
+        setAddEditModalOpen(true);
+    };
+
+    const handleDeleteTicket = (ticket: PurchaseTicket) => {
+        setSelectedTicket(ticket);
+        setDeleteConfirmOpen(true);
+    };
+
+    const confirmDelete = () => {
+        if (selectedTicket) {
+            deletePurchaseTicket(selectedTicket.id);
+        }
+        setDeleteConfirmOpen(false);
+        setSelectedTicket(null);
+    };
+
+    const renderActions = (ticket: PurchaseTicket) => (
+        <div className="space-x-2">
+            <button onClick={() => handleEditTicket(ticket)} className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 font-medium">Edit</button>
+            <button onClick={() => handleDeleteTicket(ticket)} className="text-red-600 hover:text-red-900 dark:text-red-400 font-medium">Delete</button>
+        </div>
+    );
 
     const columns: any[] = [
         { header: 'Ticket No', accessor: 'id', sortable: true },
@@ -419,7 +466,7 @@ const PurchaseRecordPage: React.FC = () => {
                         </ol>
                     </nav>
                 </div>
-                <button onClick={() => setCreateModalOpen(true)} className="flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
+                <button onClick={handleAddNew} className="flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
                     <PlusIcon className="w-5 h-5 mr-2" />
                     Add New Record
                 </button>
@@ -433,7 +480,7 @@ const PurchaseRecordPage: React.FC = () => {
                     <input
                         id="inventory-search"
                         type="text"
-                        placeholder="Search by Ticket No, Customer, or Material..."
+                        placeholder="Search by Ticket No, Customer, Truck No, etc..."
                         value={searchTerm}
                         onChange={e => setSearchTerm(e.target.value)}
                         className="w-full md:w-1/3"
@@ -442,9 +489,23 @@ const PurchaseRecordPage: React.FC = () => {
                 </div>
             </div>
 
-            <DataTable columns={columns} data={filteredTickets} onViewDetails={handleViewTicket} />
-            <CreatePurchaseTicketModal isOpen={isCreateModalOpen} onClose={() => setCreateModalOpen(false)} />
+            <DataTable 
+                columns={columns} 
+                data={filteredTickets} 
+                onViewDetails={handleViewTicket} 
+                renderActions={renderActions}
+            />
+            <AddEditPurchaseTicketModal isOpen={isAddEditModalOpen} onClose={() => setAddEditModalOpen(false)} ticket={selectedTicket} />
             <ViewPurchaseTicketModal isOpen={isViewModalOpen} onClose={() => setViewModalOpen(false)} ticket={selectedTicket} />
+            <Modal isOpen={isDeleteConfirmOpen} onClose={() => setDeleteConfirmOpen(false)} title="Confirm Deletion">
+                <div>
+                    <p>Are you sure you want to delete purchase record <strong>#{selectedTicket?.id}</strong>? This action cannot be undone.</p>
+                    <div className="flex justify-end pt-4 space-x-2 mt-4">
+                        <button onClick={() => setDeleteConfirmOpen(false)} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500">Cancel</button>
+                        <button onClick={confirmDelete} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">Delete</button>
+                    </div>
+                </div>
+            </Modal>
         </div>
     );
 };
